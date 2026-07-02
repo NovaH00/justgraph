@@ -1,15 +1,13 @@
 [project]
 name = "justgraph"
-version = "0.1.1"
-description = "Add your description here"
+version = "0.1.3"
+description = "A lightweight graph-based state machine."
 readme = "README.md"
 authors = [
     { name = "NovaH00", email = "trantay2006super@gmail.com" }
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "pydantic>=2.13.4",
-    "returns>=0.28.0",
 ]
 
 [build-system]
