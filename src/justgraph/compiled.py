@@ -16,16 +16,23 @@ class CompiledGraph:
         edges: dict[str, list[str]],
         conditional_edges: dict[str, tuple[Callable, dict[str, str]]],
         entry_point: str,
+        state_types: set[type[State]],
     ):
         self._nodes = nodes
         self._edges = edges
         self._conditional_edges = conditional_edges
         self._entry_point = entry_point
+        self._state_types = state_types
 
     def invoke(self, initial_states: Sequence[State]) -> list[State]:
         state_map: dict[type[State], State] = {
             type(s): copy(s) for s in initial_states
         }
+        missing = self._state_types - state_map.keys()
+        if missing:
+            names = ", ".join(t.__name__ for t in missing)
+            raise ValueError(f"Missing required state(s): {names}")
+
         active = [self._entry_point]
 
         while active:

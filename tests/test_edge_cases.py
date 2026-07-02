@@ -294,7 +294,7 @@ def test_invoke_with_missing_state() -> None:
     def a(state: SimpleState) -> list[FieldUpdate]:
         return []
 
-    with pytest.raises(KeyError):
+    with pytest.raises(ValueError, match="Missing required state"):
         graph.set_entry_point("a").compile().invoke([])
 
 

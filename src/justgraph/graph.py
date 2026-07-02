@@ -126,5 +126,6 @@ class Graph:
             edges=self._edges,
             conditional_edges=self._conditional_edges,
             entry_point=self._entry_point,
+            state_types=self._state_types,
         )
 
