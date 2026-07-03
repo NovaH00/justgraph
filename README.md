@@ -38,12 +38,29 @@ app.invoke([ChatState(messages=[], counter=0)])
 
 - **Nodes** — functions that receive state and return `list[Step]`
 - **`Step(target, updates)`** — encapsulate routing and data mutations together
-- **No edges** — all routing is implicit in return values (no `add_edge()`)
-- **Parallel fan-out** — return multiple `Step`s and branches run concurrently
-- **N=1 optimization** — single `Step` with no updates reuses state directly (no copy)
-- **Depth limit** — configurable `max_depth` prevents infinite loops in cyclic graphs
-- **Reducers** — `Extend`, `Increment`, `Assign`, or custom
+- **No edges** — all routing is implicit in return values
+- **Parallel fan-out** — multiple `Step`s run branches concurrently
+- **N=1 optimization** — linear chains reuse state directly (no copy)
+- **Depth limit** — configurable `max_depth` prevents infinite loops
+- **Reducers** — `Extend`, `Increment`, `Assign`, `Merge`, or custom
 - **Multiple states** — nodes can depend on different state types
+- **`Context`** — inspect node name, depth, branch id, and pass runtime config
+
+## Context
+
+Every node can optionally receive a `Context` parameter for introspection:
+
+```python
+from justgraph import Context
+
+@graph.node("chat")
+def chat(state: ChatState, ctx: Context) -> list[Step]:
+    print(f"  node={ctx.node_name}, depth={ctx.depth}")
+    print(f"  branch={ctx.branch_id}, config={ctx.config}")
+    return [Step("log")]
+```
+
+The `Context` object provides: `node_name`, `last_node`, `depth`, `max_depth`, `invoke_id`, `start_time`, `branch_id`, and `config` (a dict passed via `invoke(…, ctx_config={...})`).
 
 ## Custom Reducers
 

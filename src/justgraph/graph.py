@@ -3,7 +3,7 @@
 from typing import Sequence, get_args, get_origin, get_type_hints
 from inspect import signature
 
-from justgraph.models import State, Node, Step, Dependency
+from justgraph.models import State, Node, Step, Dependency, Context
 from justgraph.compiled import CompiledGraph
 
 
@@ -58,6 +58,11 @@ class Graph:
                     raise TypeError(
                         f"Parameter '{param.name}' must be one of the registered states: {self._fmt_states()}"
                     )
+                if annotation is Context:
+                    dependencies.append(
+                        Dependency(name=param.name, annotation=annotation)
+                    )
+                    continue
                 if annotation not in self._state_types:
                     raise TypeError(
                         f"Parameter '{param.name}' has type '{annotation.__name__}', "

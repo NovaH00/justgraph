@@ -1,8 +1,28 @@
-"""Core types: state containers, reducers, field updates, and node definitions."""
+"""Core types: state containers, reducers, field updates, node definitions, and context."""
 
 from typing import Any, Callable
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+
+@dataclass
+class Context:
+    """Runtime context injected into node functions.
+
+    Provides metadata about the current execution: what node is running,
+    how deep in the graph, UUIDv7 identifiers for tracing, and user config.
+
+    To use, add a ``ctx: Context`` parameter to your node function.
+    """
+
+    node_name: str = ""
+    last_node: str | None = None
+    depth: int = 0
+    max_depth: int = 25
+    invoke_id: str = ""
+    start_time: float = 0.0
+    branch_id: str = ""
+    config: dict[str, Any] = field(default_factory=dict)
 
 class Reducer[T](ABC):
     """A deterministic function that computes a new field value from the old one."""

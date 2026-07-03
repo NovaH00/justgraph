@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 import pytest
 
-from justgraph import State, FieldUpdate, Step, Graph
+from justgraph import State, FieldUpdate, Step, Graph, Context
 from justgraph.reducers import Increment, Assign
 
 
@@ -376,6 +376,129 @@ def test_deep_chain() -> None:
 
     result = graph.set_entry_point("a").compile().invoke([SimpleState(value=0)])
     assert result[0].value == 6
+
+
+# ── Context ──────────────────────────────────────────────────
+
+
+def test_context_injected() -> None:
+    graph = Graph([SimpleState])
+
+    @graph.node("a")
+    def a(ctx: Context, state: SimpleState) -> list[Step]:
+        assert isinstance(ctx, Context)
+        assert ctx.node_name == "a"
+        assert ctx.depth == 0
+        assert ctx.last_node is None
+        assert ctx.invoke_id
+        assert ctx.branch_id
+        assert ctx.start_time > 0
+        assert ctx.max_depth == 25
+        return []
+
+    graph.set_entry_point("a").compile().invoke([SimpleState()])
+
+
+def test_context_depth_increments() -> None:
+    graph = Graph([SimpleState])
+
+    @graph.node("a")
+    def a(ctx: Context, state: SimpleState) -> list[Step]:
+        assert ctx.depth == 0
+        return [Step("b")]
+
+    @graph.node("b")
+    def b(ctx: Context, state: SimpleState) -> list[Step]:
+        assert ctx.depth == 1
+        assert ctx.last_node == "a"
+        return [Step("c")]
+
+    @graph.node("c")
+    def c(ctx: Context, state: SimpleState) -> list[Step]:
+        assert ctx.depth == 2
+        assert ctx.last_node == "b"
+        return []
+
+    graph.set_entry_point("a").compile().invoke([SimpleState()])
+
+
+def test_context_invoke_id_constant() -> None:
+    graph = Graph([SimpleState])
+    ids: list[str] = []
+
+    @graph.node("a")
+    def a(ctx: Context, state: SimpleState) -> list[Step]:
+        ids.append(ctx.invoke_id)
+        return [Step("b")]
+
+    @graph.node("b")
+    def b(ctx: Context, state: SimpleState) -> list[Step]:
+        ids.append(ctx.invoke_id)
+        return []
+
+    graph.set_entry_point("a").compile().invoke([SimpleState()])
+    assert len(ids) == 2
+    assert ids[0] == ids[1]
+
+
+def test_context_branch_ids_differ() -> None:
+    graph = Graph([SimpleState])
+    branch_ids: list[str] = []
+
+    @graph.node("start")
+    def start(ctx: Context, state: SimpleState) -> list[Step]:
+        return [Step("leaf"), Step("leaf")]
+
+    @graph.node("leaf")
+    def leaf(ctx: Context, state: SimpleState) -> list[Step]:
+        branch_ids.append(ctx.branch_id)
+        return []
+
+    graph.set_entry_point("start").compile().invoke([SimpleState()])
+    assert len(branch_ids) == 2
+    assert branch_ids[0] != branch_ids[1]
+
+
+def test_context_config_passed_through() -> None:
+    graph = Graph([SimpleState])
+
+    @graph.node("a")
+    def a(ctx: Context, state: SimpleState) -> list[Step]:
+        assert ctx.config.get("user") == "alice"
+        assert ctx.config.get("threshold") == 42
+        return []
+
+    graph.set_entry_point("a").compile().invoke(
+        [SimpleState()],
+        ctx_config={"user": "alice", "threshold": 42},
+    )
+
+
+def test_context_max_depth_matches_graph() -> None:
+    graph = Graph([SimpleState]).set_max_depth(10)
+
+    @graph.node("a")
+    def a(ctx: Context, state: SimpleState) -> list[Step]:
+        assert ctx.max_depth == 10
+        return []
+
+    graph.set_entry_point("a").compile().invoke([SimpleState()])
+
+
+def test_context_optional_not_required() -> None:
+    """Node without ctx parameter should still work."""
+    graph = Graph([SimpleState])
+
+    @graph.node("a")
+    def a(state: SimpleState) -> list[Step]:
+        return [Step("b", [FieldUpdate(SimpleState, "value", Increment(1))])]
+
+    @graph.node("b")
+    def b(state: SimpleState) -> list[Step]:
+        return []
+
+    result = graph.set_entry_point("a").compile().invoke([SimpleState(value=0)])
+    assert result[0].value == 1
 
 
 # ── Run all ──────────────────────────────────────────────────
