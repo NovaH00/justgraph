@@ -1,8 +1,8 @@
 """Basic linear graph: chat node -> log node."""
 from dataclasses import dataclass
 
-from justgraph import State, FieldUpdate, Graph
-from justgraph.reducers import ExtendList, Increment
+from justgraph import State, FieldUpdate, Step, Graph
+from justgraph.reducers import Extend, Increment
 
 
 @dataclass
@@ -11,26 +11,21 @@ class ChatState(State):
     counter: int
 
 
-def main() -> None:
-    graph = Graph([ChatState])
+graph = Graph([ChatState])
 
-    @graph.node("chat")
-    def chat(state: ChatState) -> list[FieldUpdate]:
-        return [
-            FieldUpdate(ChatState, "messages", ExtendList(["world"])),
-            FieldUpdate(ChatState, "counter", Increment(20)),
-        ]
+@graph.node("chat")
+def chat() -> list[Step]:
+    return [Step("log", [
+        FieldUpdate(ChatState, "messages", Extend(["world"])),
+        FieldUpdate(ChatState, "counter", Increment(20)),
+    ])]
 
-    @graph.node("log")
-    def log(state: ChatState) -> list[FieldUpdate]:
-        print(state.messages)
-        print(state.counter)
-        return []
+@graph.node("log")
+def log(state: ChatState) -> list[Step]:
+    print(state.messages)
+    print(state.counter)
+    return []
 
-    graph.set_entry_point("chat").add_edge("chat", "log")
-    app = graph.compile()
-    app.invoke([ChatState(messages=["hello"], counter=0)])
-
-
-if __name__ == "__main__":
-    main()
+graph.set_entry_point("chat")
+app = graph.compile()
+app.invoke([ChatState(messages=["hello"], counter=0)])

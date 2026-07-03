@@ -11,9 +11,19 @@ class Reducer[T](ABC):
 
 @dataclass
 class FieldUpdate:
+    """Describes a single field mutation on a state: which state, which field, and how to reduce."""
+
     state: type
     field: str
     reducer: Reducer
+
+
+@dataclass
+class Step:
+    """A routing command returned by a node. Send target and optional state payload."""
+
+    target: str | None
+    updates: list[FieldUpdate] | None = None
 
 class State:
     """Base class for all state types. Subclass with @dataclass to define fields."""
@@ -29,7 +39,7 @@ class Node:
     def __init__(
         self,
         name: str,
-        fn: Callable[..., list[FieldUpdate]],
+        fn: Callable[..., list[Step]],
         dependencies: list[Dependency],
     ):
         self.name = name

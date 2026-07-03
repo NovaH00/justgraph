@@ -1,7 +1,7 @@
-"""Conditional edge: route to different nodes based on state."""
+"""Conditional routing: entry decides which node to go to based on state."""
 from dataclasses import dataclass
 
-from justgraph import State, FieldUpdate, Graph
+from justgraph import State, FieldUpdate, Step, Graph
 from justgraph.reducers import Increment
 
 
@@ -11,44 +11,41 @@ class ChatState(State):
     counter: int
 
 
-def router(state: ChatState) -> str:
-    return "has_msgs" if state.messages else "empty"
+graph = Graph([ChatState])
 
+@graph.node("entry")
+def entry(state: ChatState) -> list[Step]:
+    if state.messages:
+        return [Step("log_msg")]
+    return [Step("noop")]
 
-def main() -> None:
-    graph = Graph([ChatState])
+@graph.node("log_msg")
+def log_msg(state: ChatState) -> list[Step]:
+    print(f"  Messages: {state.messages}")
+    return [Step("increment")]
 
-    @graph.node("entry")
-    def entry(state: ChatState) -> list[FieldUpdate]:
-        return []
+@graph.node("increment")
+def increment(state: ChatState) -> list[Step]:
+    print(f"  Counter: {state.counter}")
+    return [Step("counter_updated", [
+        FieldUpdate(ChatState, "counter", Increment(1)),
+    ])]
 
-    @graph.node("log_msg")
-    def log_msg(state: ChatState) -> list[FieldUpdate]:
-        print(f"  Messages: {state.messages}")
-        return [FieldUpdate(ChatState, "counter", Increment(1))]
+@graph.node("counter_updated")
+def counter_updated(state: ChatState) -> list[Step]:
+    print(f"  Counter after: {state.counter}")
+    return []
 
-    @graph.node("noop")
-    def noop(state: ChatState) -> list[FieldUpdate]:
-        print("  No messages, nothing to do")
-        return []
+@graph.node("noop")
+def noop() -> list[Step]:
+    print("  No messages, nothing to do")
+    return []
 
-    (
-        graph
-        .set_entry_point("entry")
-        .add_conditional_edge("entry", router, {
-            "has_msgs": "log_msg",
-            "empty": "noop",
-        })
-    )
+graph.set_entry_point("entry")
+app = graph.compile()
 
-    app = graph.compile()
+print("--- Invoke with messages ---")
+app.invoke([ChatState(messages=["hello", "world"], counter=0)])
 
-    print("--- Invoke with messages ---")
-    app.invoke([ChatState(messages=["hello", "world"], counter=0)])
-
-    print("--- Invoke with empty messages ---")
-    app.invoke([ChatState(messages=[], counter=0)])
-
-
-if __name__ == "__main__":
-    main()
+print("--- Invoke with empty messages ---")
+app.invoke([ChatState(messages=[], counter=0)])
