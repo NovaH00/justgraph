@@ -139,7 +139,7 @@ def test_wrong_return_type() -> None:
 def test_missing_param_annotation() -> None:
     graph = Graph([SimpleState])
 
-    with pytest.raises(TypeError, match="registered states"):
+    with pytest.raises(TypeError, match="invalid type annotation"):
 
         @graph.node("a")
         def a(state) -> list[Step]:
@@ -153,6 +153,49 @@ def test_unregistered_state_param() -> None:
 
         @graph.node("a")
         def a(state: OtherState) -> list[Step]:
+            return []
+
+
+# ── Parameter validation ─────────────────────────────────────
+
+
+def test_default_value_rejected() -> None:
+    graph = Graph([SimpleState])
+
+    with pytest.raises(TypeError, match="default value"):
+
+        @graph.node("a")
+        def a(state: SimpleState, x: SimpleState = SimpleState()) -> list[Step]:  # type: ignore
+            return []
+
+
+def test_star_args_rejected() -> None:
+    graph = Graph([SimpleState])
+
+    with pytest.raises(TypeError, match=r"\*args"):
+
+        @graph.node("a")
+        def a(state: SimpleState, *args) -> list[Step]:  # type: ignore
+            return []
+
+
+def test_star_star_kwargs_rejected() -> None:
+    graph = Graph([SimpleState])
+
+    with pytest.raises(TypeError, match=r"\*\*kwargs"):
+
+        @graph.node("a")
+        def a(state: SimpleState, **kwargs) -> list[Step]:  # type: ignore
+            return []
+
+
+def test_keyword_only_rejected() -> None:
+    graph = Graph([SimpleState])
+
+    with pytest.raises(TypeError, match="keyword-only"):
+
+        @graph.node("a")
+        def a(state: SimpleState, *, opt: str) -> list[Step]:  # type: ignore
             return []
 
 

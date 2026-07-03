@@ -53,10 +53,30 @@ class Graph:
 
             dependencies = []
             for param in sig.parameters.values():
+                if param.default is not param.empty:
+                    raise TypeError(
+                        f"Parameter '{param.name}' of node '{name}' has a default value, "
+                        f"which is not allowed"
+                    )
+                if param.kind in (
+                    param.VAR_POSITIONAL,
+                    param.VAR_KEYWORD,
+                    param.KEYWORD_ONLY,
+                ):
+                    kind_str = {
+                        param.VAR_POSITIONAL: "*args",
+                        param.VAR_KEYWORD: "**kwargs",
+                        param.KEYWORD_ONLY: "keyword-only",
+                    }[param.kind]
+                    raise TypeError(
+                        f"Parameter '{param.name}' of node '{name}' is {kind_str}, "
+                        f"expected a positional parameter"
+                    )
+
                 annotation = hints.get(param.name)
                 if annotation is None or not isinstance(annotation, type):
                     raise TypeError(
-                        f"Parameter '{param.name}' must be one of the registered states: {self._fmt_states()}"
+                        f"Parameter '{param.name}' is missing or has an invalid type annotation"
                     )
                 if annotation is Context:
                     dependencies.append(
@@ -66,7 +86,7 @@ class Graph:
                 if annotation not in self._state_types:
                     raise TypeError(
                         f"Parameter '{param.name}' has type '{annotation.__name__}', "
-                        f"expected one of: {self._fmt_states()}"
+                        f"expected one of: Context, {self._fmt_states()}"
                     )
 
                 dependencies.append(
