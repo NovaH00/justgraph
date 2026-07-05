@@ -1,6 +1,17 @@
 # justgraph
 
-A lightweight graph-based state machine inspired by LangGraph.
+A lightweight graph-based state machine.
+
+## Install
+With `pip`
+```bash
+pip install justgraph
+```
+
+With `uv`
+```bash
+uv add justgraph
+```
 
 ```python
 from justgraph import State, FieldUpdate, Step, Graph
@@ -14,7 +25,7 @@ class ChatState(State):
 
 graph = Graph([ChatState])
 
-@graph.node("greet")
+@graph.node("greet", is_entry_point=True)
 def greet(state: ChatState) -> list[Step]:
     return [Step("log", [
         FieldUpdate(ChatState, "messages", Extend(["hello"])),
@@ -26,39 +37,51 @@ def log(state: ChatState) -> list[Step]:
     print(state.messages)
     return []
 
-graph.set_entry_point("greet")
 app = graph.compile()
 app.invoke([ChatState(messages=[], counter=0)])
 # ['hello']
 ```
 
-## Features
+## Step API
 
-- **Nodes** — functions that receive state and return `list[Step]`
-- **`Step(target, updates)`** — encapsulate routing and data mutations together
-- **No edges** — all routing is implicit in return values
-- **Parallel fan-out** — multiple `Step`s run branches concurrently
-- **N=1 optimization** — linear chains reuse state directly (no copy)
-- **Depth limit** — configurable `max_depth` prevents infinite loops
-- **Reducers** — `Extend`, `Increment`, `Assign`, `Merge`, or custom
-- **Multiple states** — nodes can depend on different state types
-- **`Context`** — inspect node name, depth, branch id, and pass runtime config
+No explicit edges. Each node returns `list[Step]` — each Step carries a target and optional updates:
+
+```python
+Step("next_node")                          # route only
+Step("next_node", updates=[...])           # route + mutate
+Step(None)                                 # terminate this branch
+Step(None, updates=[...])                  # mutate then terminate
+```
+
+Returning multiple Steps fans out in parallel:
+
+```python
+@graph.node("split")
+def split(state: ChatState) -> list[Step]:
+    return [
+        Step("slow_a", updates=[...]),
+        Step("slow_b", updates=[...]),
+        Step("slow_c", updates=[...]),
+    ]
+```
+
+All three branches run concurrently via `ThreadPoolExecutor`. Updates are merged to the shared state before the next BFS level.
 
 ## Context
 
-Every node can optionally receive a `Context` parameter for introspection:
+Every node can optionally receive a `Context` parameter:
 
 ```python
 from justgraph import Context
 
-@graph.node("chat")
+@graph.node("chat", is_entry_point=True)
 def chat(state: ChatState, ctx: Context) -> list[Step]:
     print(f"  node={ctx.node_name}, depth={ctx.depth}")
     print(f"  branch={ctx.branch_id}, config={ctx.config}")
-    return [Step("log")]
+    return [Step(None)]
 ```
 
-The `Context` object provides: `node_name`, `last_node`, `depth`, `max_depth`, `invoke_id`, `start_time`, `branch_id`, and `config` (a dict passed via `invoke(…, ctx_config={...})`).
+Fields: `node_name`, `last_node`, `depth`, `max_depth`, `invoke_id`, `start_time`, `branch_id`, `config` (a dict passed via `invoke(…, ctx_config={...})`).
 
 ## Custom Reducers
 
@@ -73,9 +96,19 @@ class Multiply(Reducer[int]):
     def apply(self, old: int) -> int:
         return old * self._factor
 
-# Use it like any built-in reducer
 FieldUpdate(ChatState, "counter", Multiply(3))
 ```
+
+## Features
+
+- **No edges** — all routing is implicit in return values
+- **Parallel fan-out** — multiple Steps run branches concurrently
+- **Fan-in synchronisation** — BFS level-order guarantees downstream nodes see all branch updates
+- **Depth limit** — `graph.set_max_depth(n)` prevents infinite loops (default 25)
+- **Reducers** — `Extend`, `Increment`, `Assign`, `Merge`, or custom
+- **Multiple states** — nodes can depend on different state types
+- **Runtime context** — inspect node name, depth, branch id, and pass config
+- **State not required** — a node with no state parameters only receives `Context`
 
 ## Examples
 

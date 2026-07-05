@@ -8,20 +8,50 @@ from justgraph.compiled import CompiledGraph
 
 
 class Graph:
-    """Blueprint builder. Register nodes, compile to a CompiledGraph."""
+    """Blueprint builder. Register nodes, set entry point, compile into an executor.
+
+    Example:
+        graph = Graph([ChatState])
+
+        @graph.node("start", is_entry_point=True)
+        def start(ctx: Context) -> list[Step]:
+            return [Step("end")]
+
+        app = graph.compile()
+        result = app.invoke([ChatState()])
+    """
 
     def __init__(self, state_types: Sequence[type[State]]):
+        """Initialise a graph blueprint.
+
+        Args:
+            state_types: One or more State subclasses that nodes
+                can depend on. Every state type used across all nodes
+                must be listed here.
+        """
         self._state_types = set(state_types)
         self._nodes: dict[str, Node] = {}
         self._entry_point: str | None = None
         self._max_depth: int = 25
 
     def set_max_depth(self, depth: int) -> Graph:
+        """Limit graph traversal depth as a cycle safety net (default 25).
+
+        Args:
+            depth: Maximum number of BFS levels before invoke() raises.
+        """
         self._max_depth = depth
         return self
 
     def set_entry_point(self, name: str) -> Graph:
-        """Set the starting node for graph execution."""
+        """Set the starting node for graph execution.
+
+        Equivalent to passing `is_entry_point=True` to the node()
+        decorator. Last call wins if both are used.
+
+        Args:
+            name: The node name (as passed to node()) where execution begins.
+        """
         if name not in self._nodes:
             raise ValueError(f"Node '{name}' not found")
         self._entry_point = name
@@ -30,11 +60,33 @@ class Graph:
     def _fmt_states(self) -> str:
         return ", ".join(sorted(t.__name__ for t in self._state_types))
 
-    def node(self, name: str):
-        """Register a graph node. The decorated function must return ``list[Step]``."""
+    def node(self, name: str, *, is_entry_point: bool = False):
+        """Register a graph node via decorator.
+
+        The decorated function must:
+        - Have a return annotation of list[Step]
+        - Only accept positional parameters (no defaults, *args, **kwargs,
+          or keyword-only params)
+        - Annotate each parameter with either a registered State subclass
+          or Context
+
+        Args:
+            name: Unique node name used in set_entry_point() and Step targets.
+            is_entry_point: If True, set this node as the entry point
+                (equivalent to calling set_entry_point(name) afterwards).
+                Last call wins if set multiple times.
+
+        Example:
+            @graph.node("greet", is_entry_point=True)
+            def greet(state: ChatState, ctx: Context) -> list[Step]:
+                return [Step("log", updates=[...])]
+        """
 
         if name in self._nodes:
             raise ValueError(f"'{name}' already registered")
+
+        if is_entry_point:
+            self._entry_point = name
 
         def wrapper(fn):
             sig = signature(fn)
@@ -102,7 +154,11 @@ class Graph:
         return wrapper
 
     def compile(self) -> CompiledGraph:
-        """Validate the graph and produce an executable CompiledGraph."""
+        """Validate the graph and produce an executable CompiledGraph.
+
+        Raises:
+            ValueError: If no entry point has been set via set_entry_point().
+        """
         if self._entry_point is None:
             raise ValueError("Entry point not set. Call set_entry_point() first.")
 

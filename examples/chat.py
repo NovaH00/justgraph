@@ -10,7 +10,7 @@ class ChatState(State):
 
 graph = Graph([ChatState])
 
-@graph.node("chat")
+@graph.node("chat", is_entry_point=True)
 def chat() -> list[Step]:
     return [Step("log", [
         FieldUpdate(ChatState, "messages", Extend(["world"])),
@@ -24,6 +24,5 @@ def log(state: ChatState, ctx: Context) -> list[Step]:
     print(f"  counter:  {state.counter}")
     return []
 
-graph.set_entry_point("chat")
 app = graph.compile()
 app.invoke([ChatState(messages=["hello"], counter=0)], ctx_config={"user": "alice"})

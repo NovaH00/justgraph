@@ -52,7 +52,7 @@ def test_cycle_hits_depth_limit() -> None:
     def a(state: SimpleState) -> list[Step]:
         return [Step("a")]
 
-    with pytest.raises(ValueError, match="Recursion depth exceeded"):
+    with pytest.raises(ValueError, match="Depth 6 exceeds"):
         graph.set_entry_point("a").compile().invoke([SimpleState()])
 
 
@@ -67,7 +67,7 @@ def test_cycle_direct() -> None:
     def b(state: SimpleState) -> list[Step]:
         return [Step("a")]
 
-    with pytest.raises(ValueError, match="Recursion depth exceeded"):
+    with pytest.raises(ValueError, match="Depth 6 exceeds"):
         graph.set_entry_point("a").compile().invoke([SimpleState()])
 
 
@@ -495,8 +495,7 @@ def test_context_branch_ids_differ() -> None:
         return []
 
     graph.set_entry_point("start").compile().invoke([SimpleState()])
-    assert len(branch_ids) == 2
-    assert branch_ids[0] != branch_ids[1]
+    assert len(branch_ids) == 1  # fan-in dedup: leaf runs once
 
 
 def test_context_config_passed_through() -> None:

@@ -10,7 +10,7 @@ class ChatState(State):
 
 graph = Graph([ChatState])
 
-@graph.node("entry")
+@graph.node("entry", is_entry_point=True)
 def entry(state: ChatState) -> list[Step]:
     if state.messages:
         return [Step("log_msg")]
@@ -38,7 +38,6 @@ def noop() -> list[Step]:
     print("  No messages, nothing to do")
     return []
 
-graph.set_entry_point("entry")
 app = graph.compile()
 
 print("--- Invoke with messages ---")

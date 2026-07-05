@@ -13,7 +13,7 @@ class Context:
     Provides metadata about the current execution: what node is running,
     how deep in the graph, UUIDv7 identifiers for tracing, and user config.
 
-    To use, add a ``ctx: Context`` parameter to your node function.
+    To use, add a ctx: Context parameter to your node function.
     """
 
     node_name: str = ""
@@ -26,13 +26,38 @@ class Context:
     config: dict[str, Any] = field(default_factory=dict)
 
 class Reducer[T](ABC):
-    """A deterministic function that computes a new field value from the old one."""
+    """Abstract base for field update logic.
+
+    Subclass and implement apply() to define how a field transitions
+    from its old value to a new one. Reducers are applied deterministically
+    and must be commutative/associative for parallel correctness.
+
+    Example:
+        class Multiply(Reducer[int]):
+            def __init__(self, factor: int):
+                self.factor = factor
+            def apply(self, old: int) -> int:
+                return old * self.factor
+    """
+
     @abstractmethod
     def apply(self, old: T) -> T: ...
 
 @dataclass
 class FieldUpdate:
-    """Describes a single field mutation on a state: which state, which field, and how to reduce."""
+    """Declares a mutation on a single field of a state type.
+
+    The mutation is not applied immediately - it is collected by the runtime
+    and applied via the reducer after the node (or parallel band) completes.
+
+    Attributes:
+        state: The State subclass this update targets.
+        field: The field name on that state (must exist in annotations).
+        reducer: A Reducer instance defining how to transform the old value.
+
+    Example:
+        FieldUpdate(ChatState, "messages", Extend(["hello"]))
+    """
 
     state: type
     field: str
@@ -45,19 +70,40 @@ class FieldUpdate:
 
 @dataclass
 class Step:
-    """A routing command returned by a node. Send target and optional state payload."""
+    """A routing + mutation command yielded by a node function.
+
+    Each Step tells the runtime: route execution to target (or terminate
+    if None), carrying these updates to apply to the shared state.
+
+    Attributes:
+        target: The next node to execute, or None to terminate this branch.
+        updates: Optional list of FieldUpdates to apply before routing.
+
+    Example:
+        Step("process", updates=[FieldUpdate(ChatState, "counter", Increment(1))])
+    """
 
     target: str | None
     updates: list[FieldUpdate] | None = None
 
 @dataclass_transform()
 class StateMeta(type):
-    """A simple meta class that apply dataclass to the subclass of State"""
+    """Applies @dataclass automatically to any State subclass."""
     def __new__(mcs, name, bases, namespace, **kwargs):
         return dataclass(super().__new__(mcs, name, bases, namespace)) # type: ignore
 
+@dataclass_transform()
 class State(metaclass=StateMeta):
-    """Base class for all state types. Subclass to define fields."""
+    """Base class for all state types.
+
+    Subclass and annotate fields - @dataclass is applied automatically
+    by StateMeta, so you do not need to add it manually.
+
+    Example:
+        class ChatState(State):
+            messages: list[str]
+            counter: int = 0
+    """
 
 @dataclass
 class Dependency:

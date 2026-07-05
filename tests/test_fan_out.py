@@ -90,7 +90,57 @@ def test_linear_no_fan_out() -> None:
     print("[PASS] test_linear_no_fan_out")
 
 
+def test_fan_in_synchronization() -> None:
+    """Parallel branches converge on one downstream node. It must see both updates."""
+    graph = Graph([ChatState])
+
+    @graph.node("start")
+    def start(state: ChatState) -> list[Step]:
+        return [Step("branch_a", [
+            FieldUpdate(ChatState, "counter", Increment(100)),
+        ]), Step("branch_b", [
+            FieldUpdate(ChatState, "messages", Extend(["from_b"])),
+        ])]
+
+    @graph.node("branch_a")
+    def branch_a(state: ChatState) -> list[Step]:
+        time.sleep(0.2)
+        return [Step("sync", [
+            FieldUpdate(ChatState, "counter", Increment(1)),
+        ])]
+
+    @graph.node("branch_b")
+    def branch_b(state: ChatState) -> list[Step]:
+        time.sleep(0.2)
+        return [Step("sync", [
+            FieldUpdate(ChatState, "messages", Extend(["from_b2"])),
+        ])]
+
+    @graph.node("sync")
+    def sync(state: ChatState) -> list[Step]:
+        assert state.counter == 101, f"expected 101, got {state.counter}"
+        assert state.messages == ["from_b", "from_b2"], f"expected [...], got {state.messages}"
+        return [Step("end", [
+            FieldUpdate(ChatState, "counter", Increment(999)),
+        ])]
+
+    @graph.node("end")
+    def end(state: ChatState) -> list[Step]:
+        return []
+
+    graph.set_entry_point("start")
+    start_t = time.perf_counter()
+    result = graph.compile().invoke([ChatState(messages=[], counter=0, flag="")])
+    elapsed = time.perf_counter() - start_t
+
+    assert result[0].counter == 1100, f"expected 1100, got {result[0].counter}"
+    assert result[0].messages == ["from_b", "from_b2"]
+    assert elapsed < 0.35, f"expected parallel, got {elapsed:.3f}s"
+    print(f"[PASS] test_fan_in_synchronization (elapsed={elapsed:.3f}s)")
+
+
 if __name__ == "__main__":
     test_linear_no_fan_out()
     test_basic_fan_out()
+    test_fan_in_synchronization()
     print("\nAll tests passed.")

@@ -1,4 +1,4 @@
-"""Compiled graph executor. Runs the DAG via Step-based traversal."""
+"""Compiled graph executor. Runs the DAG via BFS level-order traversal."""
 
 from copy import copy
 from concurrent.futures import ThreadPoolExecutor
@@ -26,7 +26,7 @@ def _apply_updates(
 
 
 class CompiledGraph:
-    """Executor produced by `Graph.compile()`. Runs the graph via Step-based traversal."""
+    """Executor produced by Graph.compile(). Runs the graph via BFS level-order traversal."""
 
     def __init__(
         self,
@@ -45,7 +45,28 @@ class CompiledGraph:
         initial_states: Sequence[State],
         ctx_config: dict[str, Any] | None = None,
     ) -> list[State]:
-        """Execute the graph with the given initial states and return the final states."""
+        """Execute the graph and return the final states.
+
+        Traverses the graph in BFS level-order. All nodes at the same
+        depth run in parallel (via ThreadPoolExecutor); their updates
+        are merged into the shared state before the next level begins.
+        This guarantees fan-in synchronisation: a downstream node sees
+        updates from all upstream branches.
+
+        Args:
+            initial_states: One instance per registered State type, in any
+                order. Must include every type declared in Graph(state_types=...).
+            ctx_config: Optional user-defined dict accessible via ctx.config
+                inside node functions.
+
+        Returns:
+            A list of mutated state instances in the same order/types as
+            registered in Graph(state_types=...).
+
+        Raises:
+            ValueError: If any registered state type is missing from
+                initial_states, or if traversal exceeds max_depth.
+        """
         state_map: dict[type[State], State] = {
             type(s): copy(s) for s in initial_states
         }
@@ -56,86 +77,85 @@ class CompiledGraph:
 
         invoke_id = str(uuid.uuid7())
         start_time = time.time()
-        updates = self._traverse(
-            self._entry_point, state_map, 0, None,
-            invoke_id, start_time, invoke_id, ctx_config or {},
-        )
-        _apply_updates(state_map, updates)
-        return list(state_map.values())
+        config = ctx_config or {}
 
-    def _traverse(
-        self,
-        current: str,
-        state_map: dict[type[State], State],
-        depth: int,
-        last_node: str | None,
-        invoke_id: str,
-        start_time: float,
-        branch_id: str,
-        config: dict[str, Any],
-    ) -> list[FieldUpdate]:
-        """Recursively walk the graph, collecting FieldUpdates from all branches."""
-        if depth > self._max_depth:
-            raise ValueError(
-                f"Recursion depth exceeded ({depth} > {self._max_depth})"
-            )
-
-        if current not in self._nodes:
-            raise ValueError(
-                f"Node '{current}' not found (targeted by step from '{last_node}')"
-            )
-
-        node = self._nodes[current]
-        ctx = Context(
-            node_name=current,
-            last_node=last_node,
-            depth=depth,
-            max_depth=self._max_depth,
-            invoke_id=invoke_id,
-            start_time=start_time,
-            branch_id=branch_id,
-            config=config,
-        )
-        args = [
-            ctx if dep.annotation is Context else state_map[dep.annotation]
-            for dep in node.dependencies
+        # BFS queue: (node_name, last_node, branch_id)
+        queue: list[tuple[str, str | None, str]] = [
+            (self._entry_point, None, invoke_id),
         ]
-        steps = node.fn(*args) or []
+        depth = 0
 
-        if not steps:
-            return []
-
-        if len(steps) == 1:
-            step = steps[0]
-            if step.target is None:
-                return step.updates or []
-            if not step.updates:
-                return self._traverse(
-                    step.target, state_map, depth + 1, current,
-                    invoke_id, start_time, branch_id, config,
+        while queue:
+            if depth > self._max_depth:
+                raise ValueError(
+                    f"Depth {depth} exceeds max_depth {self._max_depth}"
                 )
-            branch_map = {t: copy(s) for t, s in state_map.items()}
-            _apply_updates(branch_map, step.updates)
-            deeper = self._traverse(
-                step.target, branch_map, depth + 1, current,
-                invoke_id, start_time, branch_id, config,
-            )
-            return step.updates + deeper
 
-        def process_step(step: Step) -> list[FieldUpdate]:
-            if step.target is None:
-                return step.updates or []
-            new_branch_id = str(uuid.uuid7())
-            branch_map = {t: copy(s) for t, s in state_map.items()}
-            _apply_updates(branch_map, step.updates)
-            deeper = self._traverse(
-                step.target, branch_map, depth + 1, current,
-                invoke_id, start_time, new_branch_id, config,
-            )
-            return (step.updates or []) + deeper
+            # Run all nodes in this band
+            def run_node(
+                name: str, prev_node: str | None, branch: str
+            ) -> list[Step]:
+                if name not in self._nodes:
+                    source = f" (targeted by '{prev_node}')" if prev_node else ""
+                    raise ValueError(
+                        f"Node '{name}' not found{source}"
+                    )
+                node = self._nodes[name]
+                try:
+                    ctx = Context(
+                        node_name=name,
+                        last_node=prev_node,
+                        depth=depth,
+                        max_depth=self._max_depth,
+                        invoke_id=invoke_id,
+                        start_time=start_time,
+                        branch_id=branch,
+                        config=config,
+                    )
+                    args = [
+                        ctx if dep.annotation is Context else state_map[dep.annotation]
+                        for dep in node.dependencies
+                    ]
+                    return node.fn(*args) or []
+                except Exception as e:
+                    node_name = type(e).__name__
+                    raise type(e)(
+                        f"[node '{name}'] {e}"
+                    ) from e
 
-        with ThreadPoolExecutor() as ex:
-            futures = [ex.submit(process_step, s) for s in steps]
-            results = [f.result() for f in futures]
+            if len(queue) == 1:
+                steps_batch = [run_node(*queue[0])]
+            else:
+                with ThreadPoolExecutor() as ex:
+                    futures = [ex.submit(run_node, *item) for item in queue]
+                    steps_batch = [f.result() for f in futures]
 
-        return [u for r in results for u in r]
+            # Collect updates and next targets from all nodes in this band
+            level_updates: list[FieldUpdate] = []
+            next_targets: dict[str, str | None] = {}  # target -> last_node
+
+            for (name, _, _), steps in zip(queue, steps_batch):
+                for step in steps:
+                    if step.updates:
+                        level_updates.extend(step.updates)
+                    if step.target is not None:
+                        if step.target not in next_targets:
+                            next_targets[step.target] = name
+
+            # Apply all updates to the shared state_map
+            try:
+                _apply_updates(state_map, level_updates)
+            except Exception as e:
+                band_nodes = ", ".join(name for name, _, _ in queue)
+                raise type(e)(
+                    f"[band: {band_nodes}] {e}"
+                ) from e
+
+            # Prepare next band
+            queue = [
+                (name, last, str(uuid.uuid7()))
+                for name, last in next_targets.items()
+            ]
+            depth += 1
+
+        return list(state_map.values())
