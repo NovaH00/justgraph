@@ -3,12 +3,10 @@
 A lightweight graph-based state machine inspired by LangGraph.
 
 ```python
-from dataclasses import dataclass
 from justgraph import State, FieldUpdate, Step, Graph
 from justgraph.reducers import Extend, Increment
 
 
-@dataclass
 class ChatState(State):
     messages: list[str]
     counter: int

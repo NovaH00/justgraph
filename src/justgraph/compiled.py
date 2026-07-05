@@ -26,7 +26,7 @@ def _apply_updates(
 
 
 class CompiledGraph:
-    """Executor produced by ``Graph.compile()``. Runs the graph via Step-based traversal."""
+    """Executor produced by `Graph.compile()`. Runs the graph via Step-based traversal."""
 
     def __init__(
         self,
@@ -78,6 +78,11 @@ class CompiledGraph:
         if depth > self._max_depth:
             raise ValueError(
                 f"Recursion depth exceeded ({depth} > {self._max_depth})"
+            )
+
+        if current not in self._nodes:
+            raise ValueError(
+                f"Node '{current}' not found (targeted by step from '{last_node}')"
             )
 
         node = self._nodes[current]

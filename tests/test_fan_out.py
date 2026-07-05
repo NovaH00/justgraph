@@ -1,11 +1,9 @@
 import time
-from dataclasses import dataclass
 
 from justgraph import State, FieldUpdate, Step, Graph
 from justgraph.reducers import Extend, Increment, Assign
 
 
-@dataclass
 class ChatState(State):
     messages: list[str]
     counter: int

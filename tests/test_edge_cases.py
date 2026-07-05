@@ -1,17 +1,14 @@
 """Edge-case tests for graph building and execution."""
-from dataclasses import dataclass
 import pytest
 
 from justgraph import State, FieldUpdate, Step, Graph, Context
 from justgraph.reducers import Increment, Assign
 
 
-@dataclass
 class SimpleState(State):
     value: int = 0
 
 
-@dataclass
 class OtherState(State):
     label: str = ""
 
@@ -250,7 +247,7 @@ def test_update_nonexistent_field() -> None:
     def b(state: SimpleState) -> list[Step]:
         return []
 
-    with pytest.raises(ValueError, match="has no field"):
+    with pytest.raises(ValueError, match="not found in"):
         graph.set_entry_point("a").compile().invoke([SimpleState()])
 
 

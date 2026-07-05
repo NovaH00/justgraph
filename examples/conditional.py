@@ -1,11 +1,8 @@
 """Conditional routing: entry decides which node to go to based on state."""
-from dataclasses import dataclass
-
 from justgraph import State, FieldUpdate, Step, Graph
 from justgraph.reducers import Increment
 
 
-@dataclass
 class ChatState(State):
     messages: list[str]
     counter: int

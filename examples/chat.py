@@ -1,11 +1,8 @@
 """Basic linear graph: chat node -> log node."""
-from dataclasses import dataclass
-
 from justgraph import State, FieldUpdate, Step, Graph, Context
 from justgraph.reducers import Extend, Increment
 
 
-@dataclass
 class ChatState(State):
     messages: list[str]
     counter: int

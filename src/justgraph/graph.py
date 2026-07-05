@@ -42,7 +42,7 @@ class Graph:
             return_type = hints.get("return")
             if return_type is None:
                 raise TypeError(
-                    f"Function '{fn.__name__}' must have a return type annotation of ``list[Step]``."
+                    f"Function '{fn.__name__}' must have a return type annotation of `list[Step]`."
                 )
 
             if get_origin(return_type) is not list:
@@ -86,7 +86,7 @@ class Graph:
                 if annotation not in self._state_types:
                     raise TypeError(
                         f"Parameter '{param.name}' has type '{annotation.__name__}', "
-                        f"expected one of: Context, {self._fmt_states()}"
+                        f"expected one of: justgraph.Context, {self._fmt_states()}"
                     )
 
                 dependencies.append(

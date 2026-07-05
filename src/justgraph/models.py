@@ -3,6 +3,7 @@
 from typing import Any, Callable
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import dataclass_transform
 
 
 @dataclass
@@ -37,6 +38,10 @@ class FieldUpdate:
     field: str
     reducer: Reducer
 
+    def __post_init__(self):
+        if self.field not in self.state.__annotations__:
+            raise ValueError(f"Field '{self.field}' not found in '{self.state.__name__}'")
+
 
 @dataclass
 class Step:
@@ -45,8 +50,14 @@ class Step:
     target: str | None
     updates: list[FieldUpdate] | None = None
 
-class State:
-    """Base class for all state types. Subclass with @dataclass to define fields."""
+@dataclass_transform()
+class StateMeta(type):
+    """A simple meta class that apply dataclass to the subclass of State"""
+    def __new__(mcs, name, bases, namespace, **kwargs):
+        return dataclass(super().__new__(mcs, name, bases, namespace)) # type: ignore
+
+class State(metaclass=StateMeta):
+    """Base class for all state types. Subclass to define fields."""
 
 @dataclass
 class Dependency:
