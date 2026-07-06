@@ -9,6 +9,12 @@ import time
 from justgraph.models import State, FieldUpdate, Step, Node, Context
 
 
+NodeName = str
+BranchID = str
+SourceKey = tuple[NodeName, BranchID]
+QueueEntry = tuple[NodeName, NodeName | None, BranchID]
+
+
 def _apply_updates(
     state_map: dict[type[State], State], updates: list[FieldUpdate] | None
 ) -> None:
@@ -80,7 +86,7 @@ class CompiledGraph:
         config = ctx_config or {}
 
         # BFS queue: (node_name, last_node, branch_id)
-        queue: list[tuple[str, str | None, str]] = [
+        queue: list[QueueEntry] = [
             (self._entry_point, None, invoke_id),
         ]
         depth = 0
@@ -93,7 +99,7 @@ class CompiledGraph:
 
             # Run all nodes in this band
             def run_node(
-                name: str, prev_node: str | None, branch: str
+                name: NodeName, prev_node: NodeName | None, branch: BranchID
             ) -> list[Step]:
                 if name not in self._nodes:
                     source = f" (targeted by '{prev_node}')" if prev_node else ""
@@ -118,7 +124,6 @@ class CompiledGraph:
                     ]
                     return node.fn(*args) or []
                 except Exception as e:
-                    node_name = type(e).__name__
                     raise type(e)(
                         f"[node '{name}'] {e}"
                     ) from e
@@ -132,15 +137,24 @@ class CompiledGraph:
 
             # Collect updates and next targets from all nodes in this band
             level_updates: list[FieldUpdate] = []
-            next_targets: dict[str, str | None] = {}  # target -> last_node
 
-            for (name, _, _), steps in zip(queue, steps_batch):
+            # Track (target → set of (source_name, branch_id)) to distinguish
+            # fan-out (same source, run multiple) from fan-in (different sources, dedup)
+            target_sources: dict[NodeName, set[SourceKey]] = {}
+            target_counts: dict[NodeName, int] = {}
+            target_order: dict[NodeName, int] = {}
+            idx = 0
+
+            for (name, _, branch), steps in zip(queue, steps_batch):
                 for step in steps:
                     if step.updates:
                         level_updates.extend(step.updates)
                     if step.target is not None:
-                        if step.target not in next_targets:
-                            next_targets[step.target] = name
+                        if step.target not in target_sources:
+                            target_order[step.target] = idx
+                            idx += 1
+                        target_sources.setdefault(step.target, set()).add((name, branch))
+                        target_counts[step.target] = target_counts.get(step.target, 0) + 1
 
             # Apply all updates to the shared state_map
             try:
@@ -151,11 +165,20 @@ class CompiledGraph:
                     f"[band: {band_nodes}] {e}"
                 ) from e
 
+            # Build next band: preserve multiplicity from same source,
+            # deduplicate across different sources (fan-in)
+            next_queue: list[QueueEntry] = []
+            for target in sorted(target_sources, key=lambda t: target_order[t]):
+                sources = target_sources[target]
+                if len(sources) == 1:
+                    source_name = next(iter(sources))[0]
+                    for _ in range(target_counts[target]):
+                        next_queue.append((target, source_name, str(uuid.uuid7())))
+                else:
+                    next_queue.append((target, None, str(uuid.uuid7())))
+
             # Prepare next band
-            queue = [
-                (name, last, str(uuid.uuid7()))
-                for name, last in next_targets.items()
-            ]
+            queue = next_queue
             depth += 1
 
         return list(state_map.values())

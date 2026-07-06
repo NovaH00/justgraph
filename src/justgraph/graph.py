@@ -47,13 +47,18 @@ class Graph:
         """Set the starting node for graph execution.
 
         Equivalent to passing `is_entry_point=True` to the node()
-        decorator. Last call wins if both are used.
+        decorator. Raises ValueError if an entry point is already set.
 
         Args:
             name: The node name (as passed to node()) where execution begins.
         """
         if name not in self._nodes:
             raise ValueError(f"Node '{name}' not found")
+        if self._entry_point is not None:
+            raise ValueError(
+                f"Entry point already set to '{self._entry_point}'. "
+                f"Cannot set '{name}' as another entry point."
+            )
         self._entry_point = name
         return self
 
@@ -72,9 +77,8 @@ class Graph:
 
         Args:
             name: Unique node name used in set_entry_point() and Step targets.
-            is_entry_point: If True, set this node as the entry point
-                (equivalent to calling set_entry_point(name) afterwards).
-                Last call wins if set multiple times.
+            is_entry_point: If True, set this node as the entry point.
+                Raises ValueError if an entry point is already registered.
 
         Example:
             @graph.node("greet", is_entry_point=True)
@@ -86,6 +90,11 @@ class Graph:
             raise ValueError(f"'{name}' already registered")
 
         if is_entry_point:
+            if self._entry_point is not None:
+                raise ValueError(
+                    f"Entry point already set to '{self._entry_point}'. "
+                    f"Cannot set '{name}' as another entry point."
+                )
             self._entry_point = name
 
         def wrapper(fn):

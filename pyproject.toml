@@ -1,6 +1,6 @@
 [project]
 name = "justgraph"
-version = "0.3.0"
+version = "0.3.1"
 description = "A lightweight graph-based state machine."
 readme = "README.md"
 authors = [

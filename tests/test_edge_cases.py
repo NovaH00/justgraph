@@ -495,7 +495,8 @@ def test_context_branch_ids_differ() -> None:
         return []
 
     graph.set_entry_point("start").compile().invoke([SimpleState()])
-    assert len(branch_ids) == 1  # fan-in dedup: leaf runs once
+    assert len(branch_ids) == 2  # one queue entry, two Steps to same target
+    assert len(set(branch_ids)) == 2  # each invocation gets a unique branch_id
 
 
 def test_context_config_passed_through() -> None:
